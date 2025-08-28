@@ -22,17 +22,20 @@ int main(){
     cout << "Total patrones: " << patrones.size() << endl << endl;
 
 
-    gettimeofday(&start, NULL);
     // Abrimos el archivo de texto y buscamos los patrones
     ifstream texto;
     texto.open("texto.txt");
-
+    gettimeofday(&start, NULL);
     while (getline(texto, linea)) {
         for (auto& [patron, contador] : patrones) {
-            size_t pos = 0;
-            while ((pos = linea.find(patron, pos)) != string::npos) {
+            int pos = 0;
+            while (pos < linea.length()) {
+                int found_pos = linea.find(patron, pos);
+                if (found_pos == string::npos) {
+                    break; // No se encontró más ocurrencias
+                }
                 contador++;
-                pos += patron.length(); // Avanza la longitud del patrón
+                pos = found_pos + 1; // Avanza 1 posición para buscar coincidencias superpuestas
             }
         }
     }
@@ -41,90 +44,14 @@ int main(){
     
     texto.close();
     for (const auto& [patron,contador] : patrones){
-        cout << "El patrón: "<< patron << " aparece: " << contador << " veces." << endl;
+        if (contador > 0){
+            cout << "El patrón: "<< patron << " aparece: " << contador << " veces." << endl;
+        }    
     }
+    cout << "Los demás patrones aparecen 0 veces en el texto." << endl << endl;
     cout << "Tiempo de ejecución: " << double(end.tv_sec - start.tv_sec) +
          double(end.tv_usec - start.tv_usec)/1000000 << " segundos" << endl;
     
     return 0;
 }
 
-/*  
-#include <iostream>
-#include <cmath>
-#include <iomanip>
-#include <sys/time.h>
-#include <thread>
-#include <fstream>
-#include <mutex>
-#include <vector>
-#include <map>
-using namespace std;
-
-int main(){
-    ifstream patrontxt;
-    vector<pair<string, int>> patrones;  // Usamos vector para mantener duplicados
-    string linea;
-    string palabra;
-    timeval start,end;
-
-    // Leer TODOS los patrones (incluyendo duplicados)
-    patrontxt.open("patrones.txt");
-    if (!patrontxt.is_open()) {
-        cout << "Error: No se pudo abrir patrones.txt" << endl;
-        return 1;
-    }
-    
-    cout << "Leyendo patrones (incluyendo duplicados):" << endl;
-    int contador_patrones = 0;
-    while (patrontxt >> palabra) {
-        patrones.push_back({palabra, 0});
-        cout << contador_patrones + 1 << ": '" << palabra << "'" << endl;
-        contador_patrones++;
-    }
-    patrontxt.close();
-    
-    cout << "\nTotal patrones leídos: " << contador_patrones << endl;
-
-    gettimeofday(&start, NULL);
-    
-    ifstream texto;
-    texto.open("texto.txt");
-    if (!texto.is_open()) {
-        cout << "Error: No se pudo abrir texto.txt" << endl;
-        return 1;
-    }
-
-    // Contar ocurrencias para cada patrón (incluyendo duplicados)
-    while (getline(texto, linea)) {
-        for (auto& par : patrones) {
-            string& patron = par.first;
-            int& contador = par.second;
-            
-            size_t pos = 0;
-            while ((pos = linea.find(patron, pos)) != string::npos) {
-                contador++;
-                pos += patron.length();
-            }
-        }
-    }
-    texto.close();
-
-    gettimeofday(&end, NULL);
-    
-    // Mostrar resultados de los 32 patrones
-    cout << "\nRESULTADOS:" << endl;
-    for (size_t i = 0; i < patrones.size(); i++){
-        cout << "Patrón " << i + 1 << ": " << patrones[i].first 
-             << " aparece: " << patrones[i].second << " veces." << endl;
-    }
-    
-    double tiempo = double(end.tv_sec - start.tv_sec) + 
-                   double(end.tv_usec - start.tv_usec)/1000000;
-    cout << "\nTiempo de ejecución: " << tiempo << " segundos" << endl;
-    
-    return 0;
-}
-
-
-*/
