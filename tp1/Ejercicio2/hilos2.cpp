@@ -1,160 +1,84 @@
 #include <iostream>
-#include <iomanip>
-#include <sys/time.h>
 #include <fstream>
-#include <map>
-#include <thread>
-#include <mutex>
-#include <algorithm>
 #include <vector>
-#include <string>
-#include <fstream>
+#include <thread>
+#include <sys/time.h>
 using namespace std;
 
-
-/*
-void buscarpatron(string contenido,string patron){
-    int contador = 0;
-    for (int i = 0; i < contenido.size(); i++){
-        int found_pos = contenido.find(patron,i);
-        if (found_pos != string::npos){
-            contador ++;
+void contar_patron(const vector<string>& patrones, int inicio, int fin, vector<int>& contadores, const string& texto) {
+    for (int i = inicio; i < fin; i++) {
+        int pos = 0;
+        while (true) {
+            pos = texto.find(patrones[i], pos);
+            if (pos == string::npos) break;
+            contadores[i]++;
+            pos++;  
         }
-    }
-
-    cout << "El patrón: " << patron << " apareció: " << contador << " veces" << endl;
-
-}
-
-
-int main(){
-    ifstream patrontxt("patrones.txt");
-    vector<string> patrones;
-    string palabra;
-    string contenido;
-    timeval start,end;
-
-    // Agregar la cantidad de patrones en una lista
-    while (getline(patrontxt,palabra)){
-        auto found = find(patrones.begin(),patrones.end(),palabra);
-        if (found == patrones.end()){
-            patrones.push_back(palabra);
-        }
-        
-    }
-    patrontxt.close();
-    cout << "Total patrones: " << patrones.size() << endl;
-
-    //Pasar texto a string y inicializar array de threads
-    vector<thread> hilos;
-    ifstream archivo("texto.txt");
-
-    if (archivo.is_open()){
-        contenido = string((istreambuf_iterator<char>(archivo)),istreambuf_iterator<char>());
-    }
-    archivo.close();
-
-
-    gettimeofday(&start, NULL);
-    for (int i = 0;i < patrones.size();i ++ ){
-        hilos.emplace_back(buscarpatron,contenido,patrones[i]);
-    }   
-
-    for (auto&t : hilos){
-        t.join();
-    }
-
-    gettimeofday(&end,NULL);
-
-    cout << "Tiempo de ejecución: " << double(end.tv_sec - start.tv_sec) +
-         double(end.tv_usec - start.tv_usec)/1000000 << " segundos" << endl;
-
-
-    return 0;
-}
-    */
-
-// Función optimizada para contar patrones
-int contar_patron(const string& contenido, const string& patron) {
-    int contador = 0;
-    size_t pos = 0;
-    size_t patron_len = patron.length();
-    
-    while ((pos = contenido.find(patron, pos)) != string::npos) {
-        contador++;
-        pos += patron_len; // Saltar al final del patrón encontrado
-    }
-    return contador;
-}
-
-// Función para procesar un grupo de patrones
-void procesar_grupo(const string& contenido, const vector<string>& patrones, 
-                   size_t inicio, size_t fin, vector<int>& resultados) {
-    for (size_t i = inicio; i < fin; i++) {
-        resultados[i] = contar_patron(contenido, patrones[i]);
     }
 }
 
 int main() {
-    ifstream patrontxt("patrones.txt");
+    ifstream patronesFile("patrones.txt");
+    if (!patronesFile) {
+        cout << "No se pudo abrir patrones.txt" << endl;
+        return 1;
+    }
+
     vector<string> patrones;
-    string palabra;
-    string contenido;
-    timeval start, end;
-
-    // Leer patrones
-    while (getline(patrontxt, palabra)) {
-        if (!palabra.empty()) {
-            patrones.push_back(palabra);
-        }
+    string patron;
+    while (getline(patronesFile, patron)) {
+        patrones.push_back(patron);
     }
-    patrontxt.close();
-    
-    cout << "Total patrones: " << patrones.size() << endl;
+    patronesFile.close();
 
-    // Leer contenido
-    ifstream archivo("texto.txt");
-    if (archivo.is_open()) {
-        contenido = string((istreambuf_iterator<char>(archivo)), istreambuf_iterator<char>());
+    ifstream textoFile("texto.txt");
+    if (!textoFile) {
+        cout << "No se pudo abrir texto.txt" << endl;
+        return 1;
     }
-    archivo.close();
 
-    // Determinar número óptimo de threads
-    unsigned int num_threads = thread::hardware_concurrency();
-    if (num_threads == 0) num_threads = 4; // Fallback
+    string texto;
+    getline(textoFile, texto);
+    textoFile.close();
+
+    vector<int> contadores(patrones.size(), 0);
+
+    timeval t1, t2;
+    gettimeofday(&t1, NULL);
     
-    // Agrupar patrones para threads
-    size_t patrones_por_thread = patrones.size() / num_threads;
+    const int num_hilos = 32; 
+    int patrones_por_hilo = patrones.size() / num_hilos;
+    int patrones_extra = patrones.size() % num_hilos;
+    
     vector<thread> hilos;
-    vector<int> resultados(patrones.size());
-    
-    gettimeofday(&start, NULL);
-    
-    // Crear threads para procesar grupos de patrones
-    for (unsigned int i = 0; i < num_threads; i++) {
-        size_t inicio = i * patrones_por_thread;
-        size_t fin = (i == num_threads - 1) ? patrones.size() : inicio + patrones_por_thread;
+    int inicio = 0;
+
+    for (int i = 0; i < num_hilos; i++) {
+
+        int fin = inicio + patrones_por_hilo + (i < patrones_extra ? 1 : 0);
         
-        hilos.emplace_back(procesar_grupo, ref(contenido), ref(patrones), 
-                          inicio, fin, ref(resultados));
+
+        hilos.push_back(thread(contar_patron, cref(patrones), inicio, fin, ref(contadores), cref(texto)));        
+     
+        inicio = fin;
+    }
+
+
+    for (auto& h : hilos) {
+        h.join();
     }
     
-    // Esperar a que terminen todos los threads
-    for (auto& t : hilos) {
-        t.join();
+    
+    
+
+    gettimeofday(&t2, NULL);
+
+    for (int i = 0; i < patrones.size(); i++) {
+        cout << "el patron " << i << " aparece " << contadores[i] << " veces" << endl;
     }
-    
-    gettimeofday(&end, NULL);
-    
-    // Mostrar resultados
-    for (size_t i = 0; i < patrones.size(); i++) {
-        cout << "El patrón: " << patrones[i] << " apareció: " << resultados[i] << " veces" << endl;
-    }
-    
-    double tiempo = double(end.tv_sec - start.tv_sec) + 
-                   double(end.tv_usec - start.tv_usec) / 1000000;
-    cout << "Tiempo de ejecución: " << tiempo << " segundos" << endl;
-    cout << "Número de threads utilizados: " << num_threads << endl;
+
+    double tiempo = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
+    cout << "Tiempo de ejecucion : " << tiempo << " segundos" << endl;
 
     return 0;
 }

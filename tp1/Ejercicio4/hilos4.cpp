@@ -1,116 +1,108 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
-#include <sys/time.h>
 #include <thread>
-#include <mutex>
-#include <atomic>
+#include <sys/time.h>
 #include <algorithm>
 using namespace std;
 
-mutex mtx;
-vector<long int> primosGlobal = {2};
-
-void comprobar(int n) {
-    while (n > 10000000 || n <= 1) {
-        cout << "Número incorrecto intente de vuelta: " << endl;
-        cin >> n;
-    }
-}
-
-void imprimir(vector<long int> array) {
-    int j = 0;
-    for (int i = array.size()-1; i >= 0; i--) {
-        cout << array[i] << endl;
-        j += 1;
-        if (j == 10) {
-            break;
-        }
-    }
-}
-
-// Función thread-safe para verificar y agregar primos
-void verificarYAgregarPrimo(int numero) {
-    if (numero < 3 || numero % 2 == 0) return;
-    
-    double raiz = sqrt(numero);
-    int limite = floor(raiz);
-    bool esPrimo = true;
-    
-    // Obtener copia local de primos para verificación
-    vector<long int> primosLocal;
-    {
-        lock_guard<mutex> lock(mtx);
-        primosLocal = primosGlobal;
-    }
-    
-    for (long primo : primosLocal) {
-        if (primo > limite) break;
-        if (numero % primo == 0) {
-            esPrimo = false;
-            break;
-        }
-    }
-    
-    if (esPrimo) {
-        lock_guard<mutex> lock(mtx);
-        // Verificar nuevamente por si otro hilo ya agregó este primo
-        bool yaExiste = false;
-        for (long p : primosGlobal) {
-            if (p == numero) {
-                yaExiste = true;
-                break;
+// --- Criba simple para obtener primos hasta sqrt(n)
+vector<long> primosBaseHastaRaiz(long n) {
+    long limite = floor(sqrt(n));
+    vector<bool> esPrimo(limite + 1, true);
+    esPrimo[0] = esPrimo[1] = false;
+    for (long i = 2; i * i <= limite; i++) {
+        if (esPrimo[i]) {
+            for (long j = i * i; j <= limite; j += i) {
+                esPrimo[j] = false;
             }
         }
-        if (!yaExiste) {
-            primosGlobal.push_back(numero);
+    }
+
+    vector<long> primos;
+    for (long i = 2; i <= limite; i++)
+        if (esPrimo[i]) primos.push_back(i);
+    return primos;
+}
+
+// --- Buscar primos en un rango [inicio, fin]
+vector<long> buscarPrimosEnRango(long inicio, long fin, const vector<long>& primosBase) {
+    vector<bool> esPrimo(fin - inicio + 1, true);
+
+    for (long primo : primosBase) {
+        long multInicial = max(primo * primo, ((inicio + primo - 1) / primo) * primo);
+        for (long j = multInicial; j <= fin; j += primo) {
+            esPrimo[j - inicio] = false;
         }
     }
+
+    vector<long> primosLocales;
+    for (long i = inicio; i <= fin; i++) {
+        if (i >= 2 && esPrimo[i - inicio]) {
+            primosLocales.push_back(i);
+        }
+    }
+    return primosLocales;
 }
 
 int main() {
-    timeval start, end;
-    long int n;
+    long n;
     cout << "Ingrese un número menor a 10^7: ";
     cin >> n;
-    comprobar(n);
-    
-    if (n == 2) {
-        cout << "Hay 0 números primos menores a 2.";
-        return 0; 
+    while (n > 10000000 || n <= 1) {
+        cout << "Número incorrecto, intente de vuelta: ";
+        cin >> n;
     }
-    
+
+    timeval start, end;
     gettimeofday(&start, NULL);
-    
+
+    // Paso 1: obtener primos base hasta sqrt(n)
+    vector<long> primosBase = primosBaseHastaRaiz(n);
+
+    // Paso 2: determinar cantidad de hilos
     int numHilos = thread::hardware_concurrency();
     if (numHilos == 0) numHilos = 4;
-    
+
     vector<thread> hilos;
-    
-    // Crear hilos para procesar números impares
+    vector<vector<long>> resultados(numHilos);
+
+    long rango = n / numHilos;
+
+    // Paso 3: crear hilos para distintos subrangos
     for (int i = 0; i < numHilos; i++) {
-        hilos.emplace_back([n, numHilos, i]() {
-            for (int numero = 3 + i * 2; numero <= n; numero += numHilos * 2) {
-                verificarYAgregarPrimo(numero);
-            }
+        long inicio = i * rango + 1;
+        long fin = (i == numHilos - 1) ? n : (i + 1) * rango;
+        hilos.emplace_back([&, i, inicio, fin]() {
+            resultados[i] = buscarPrimosEnRango(inicio, fin, primosBase);
         });
     }
-    
-    for (auto& hilo : hilos) {
-        hilo.join();
+
+    // Paso 4: esperar a todos los hilos
+    for (auto& hilo : hilos) hilo.join();
+
+    // Paso 5: combinar resultados
+    vector<long> primosTotales;
+    for (auto& vec : resultados) {
+        primosTotales.insert(primosTotales.end(), vec.begin(), vec.end());
     }
-    
-    // Ordenar los primos
-    sort(primosGlobal.begin(), primosGlobal.end());
-    
+
+    sort(primosTotales.begin(), primosTotales.end());
+
     gettimeofday(&end, NULL);
 
-    cout << "Hay " << primosGlobal.size() << " números primos menores que " << n << ", siendo los mayores:" << endl;
-    imprimir(primosGlobal);
+    // Mostrar resultados
+    cout << "Hay " << primosTotales.size() << " números primos menores que " << n << ", siendo los mayores:" << endl;
+    int j = 0;
+    for (int i = primosTotales.size() - 1; i >= 0 && j < 10; i--, j++) {
+        cout << primosTotales[i] << endl;
+    }
+
     cout << "..." << endl;
     cout << "Número de hilos utilizados: " << numHilos << endl;
-    cout << "Tiempo de ejecución: " << double(end.tv_sec - start.tv_sec) +
-         double(end.tv_usec - start.tv_usec)/1000000 << " segundos" << endl;
+    cout << "Tiempo de ejecución: "
+         << double(end.tv_sec - start.tv_sec) + double(end.tv_usec - start.tv_usec) / 1e6
+         << " segundos" << endl;
 
     return 0;
 }
